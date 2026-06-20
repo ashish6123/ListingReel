@@ -16,6 +16,12 @@ _jwks_cache: dict | None = None
 _jwks_fetched_at: float = 0.0
 _JWKS_TTL = 3600  # refresh JWKS every hour
 
+# Fixed allowlist: the set of algorithms we trust for JWKS-based verification.
+# Never derive this from the token header itself (that's how "alg confusion" /
+# "alg: none" auth-bypass vulnerabilities happen) — JWKS kids are public, so an
+# attacker can always supply a real kid alongside a forged alg.
+_JWKS_ALGORITHMS = ["RS256", "ES256"]
+
 
 def get_db() -> Client:
     """Returns a Supabase client authenticated with the service role key.
@@ -62,27 +68,32 @@ async def get_current_user(
             detail="Invalid token header",
         )
 
+    alg = header.get("alg")
     try:
-        if header.get("alg") == "HS256":
+        if alg == "HS256":
             payload = jwt.decode(
                 token,
                 settings.SUPABASE_JWT_SECRET,
                 algorithms=["HS256"],
                 audience="authenticated",
             )
-        else:
+        elif alg in _JWKS_ALGORITHMS:
             jwks = await _get_jwks()
             key = next(
                 (k for k in jwks["keys"] if k["kid"] == header.get("kid")), None
             )
             if key is None:
                 raise JWTError(f"No matching JWKS key for kid {header.get('kid')}")
+            # Pass the fixed allowlist, not [alg] - jose must never trust the
+            # algorithm asserted by the token itself.
             payload = jwt.decode(
                 token,
                 key,
-                algorithms=[header.get("alg")],
+                algorithms=_JWKS_ALGORITHMS,
                 audience="authenticated",
             )
+        else:
+            raise JWTError(f"Unsupported algorithm: {alg}")
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

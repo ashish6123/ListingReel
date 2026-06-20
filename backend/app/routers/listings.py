@@ -8,12 +8,28 @@ from app.models.schemas import ListingCreate, ListingListResponse, ListingRespon
 router = APIRouter(prefix="/api/listings", tags=["listings"])
 
 
+def _assert_owns_image_paths(user_id: str, image_urls: list[str]) -> None:
+    """Storage paths are scoped per-user as `{user_id}/...`. Reject any path
+    that doesn't belong to the requesting user - otherwise a client could
+    submit another user's storage path and have it signed/read server-side
+    via the service-role client, which bypasses Storage RLS."""
+    prefix = f"{user_id}/"
+    for path in image_urls:
+        if not path.startswith(prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="One or more image paths do not belong to this account.",
+            )
+
+
 @router.post("", response_model=ListingResponse, status_code=status.HTTP_201_CREATED)
 async def create_listing(
     payload: ListingCreate,
     user_id: str = Depends(get_current_user),
     db: Client = Depends(get_db),
 ) -> ListingResponse:
+    _assert_owns_image_paths(user_id, payload.image_urls)
+
     try:
         result = (
             db.table("listings")

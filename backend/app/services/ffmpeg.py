@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 
@@ -70,7 +71,28 @@ def _caption_chunks(script: str, total_duration: float) -> list[tuple[str, float
 FPS = 25
 WIDTH = 1080
 HEIGHT = 1920
-FONT_FILE = "C\\:/Windows/Fonts/arial.ttf"
+
+_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux (Docker/Render)
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # macOS
+    "C:/Windows/Fonts/arialbd.ttf",  # Windows (local dev)
+    "C:/Windows/Fonts/arial.ttf",
+]
+
+
+def _resolve_font_file() -> str:
+    for candidate in _FONT_CANDIDATES:
+        if os.path.exists(candidate):
+            # ffmpeg filter syntax uses ':' as a separator, so escape drive-letter colons
+            return candidate.replace(":", "\\:")
+    raise FFmpegError(
+        "No usable caption font found on this system. "
+        "Install fonts-dejavu-core (Linux) or use a system with Arial."
+    )
+
+
+FONT_FILE = _resolve_font_file()
 
 
 def build_video(images: list[str], audio_path: str, output_path: str, script: str) -> None:

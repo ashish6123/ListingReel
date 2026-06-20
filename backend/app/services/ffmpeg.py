@@ -114,7 +114,6 @@ def build_video(images: list[str], audio_path: str, output_path: str, script: st
 
     audio_duration = get_audio_duration(audio_path)
     per_image_duration = audio_duration / len(images)
-    frames_per_image = max(1, round(per_image_duration * FPS))
 
     cmd: list[str] = ["ffmpeg", "-y"]
 
@@ -135,11 +134,15 @@ def build_video(images: list[str], audio_path: str, output_path: str, script: st
 
     filter_parts: list[str] = []
     for i in range(len(images)):
+        # Static scale+crop slideshow (no zoompan). The zoompan "Ken Burns"
+        # filter buffers many full-resolution frames in memory and was the
+        # main driver of the OOM kills on Render's 512MB free tier - the
+        # whole container was being killed mid-encode, before the subprocess
+        # timeout could ever fire, leaving videos stuck in "processing".
         filter_parts.append(
             f"[{i}:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={WIDTH}:{HEIGHT},"
-            f"zoompan=z='min(zoom+0.0015,1.2)':d={frames_per_image}:s={WIDTH}x{HEIGHT}:fps={FPS},"
-            f"setsar=1[v{i}]"
+            f"setsar=1,fps={FPS}[v{i}]"
         )
 
     concat_inputs = "".join(f"[v{i}]" for i in range(len(images)))
@@ -171,7 +174,7 @@ def build_video(images: list[str], audio_path: str, output_path: str, script: st
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-threads",
         "1",
         "-pix_fmt",

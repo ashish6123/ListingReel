@@ -204,8 +204,25 @@ def test_build_video_uses_low_memory_encode_flags(no_real_ffprobe, monkeypatch):
     ffmpeg.build_video(["img1.jpg"], "audio.mp3", "out.mp4", "hello world")
 
     cmd = captured_cmd["cmd"]
-    assert "-preset" in cmd and cmd[cmd.index("-preset") + 1] == "veryfast"
+    assert "-preset" in cmd and cmd[cmd.index("-preset") + 1] == "ultrafast"
     assert "-threads" in cmd and cmd[cmd.index("-threads") + 1] == "1"
+
+
+def test_build_video_does_not_use_zoompan(no_real_ffprobe, monkeypatch):
+    """Regression: zoompan was the main memory driver behind the OOM kills
+    on Render's 512MB free tier. The encode must stay zoompan-free."""
+    captured_cmd = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(ffmpeg.subprocess, "run", fake_run)
+
+    ffmpeg.build_video(["img1.jpg", "img2.jpg"], "audio.mp3", "out.mp4", "hello world")
+
+    filter_complex = captured_cmd["cmd"][captured_cmd["cmd"].index("-filter_complex") + 1]
+    assert "zoompan" not in filter_complex
 
 
 def test_build_video_passes_explicit_encode_timeout(no_real_ffprobe, monkeypatch):

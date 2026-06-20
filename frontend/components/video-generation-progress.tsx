@@ -95,9 +95,19 @@ export function VideoGenerationProgress({
         toast.success("Voiceover generated.");
         setCurrentStep("video");
 
-        await api.post<GenerateVideoResponse>("/api/generate-video", {
-          video_id: voiceoverRes.video_id,
-        } satisfies GenerateVideoRequest);
+        try {
+          await api.post<GenerateVideoResponse>("/api/generate-video", {
+            video_id: voiceoverRes.video_id,
+          } satisfies GenerateVideoRequest);
+        } catch (err) {
+          // A real HTTP error response (4xx/5xx) means the server rejected
+          // the request - that's a genuine failure. But a network-level
+          // error (dropped connection, e.g. a backend restart mid-request)
+          // means we don't actually know whether the job started server
+          // side. Fall back to polling instead of failing outright, since
+          // the background task may already be running.
+          if (err instanceof ApiError) throw err;
+        }
         if (cancelled) return;
         toast.success("Assembling your video...");
 

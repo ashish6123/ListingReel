@@ -1,7 +1,7 @@
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from supabase import Client
@@ -21,6 +21,34 @@ from app.services.storage import StorageError, create_signed_url, download_file,
 router = APIRouter(prefix="/api", tags=["video"])
 
 FREE_TIER_VIDEO_LIMIT = 3
+STUCK_PROCESSING_THRESHOLD_MINUTES = 10
+
+
+def reap_stuck_videos(db: Client) -> int:
+    """Marks videos stuck in 'processing' as failed.
+
+    A background task can die without ever reaching its except block if the
+    Render container itself is restarted/OOM-killed mid-encode - the DB row
+    then sits in 'processing' forever with no error written. This sweep
+    catches those orphaned rows so users get a Retry button instead of an
+    infinite spinner.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(minutes=STUCK_PROCESSING_THRESHOLD_MINUTES)
+    ).isoformat()
+    result = (
+        db.table("videos")
+        .update(
+            {
+                "status": "failed",
+                "error_message": "Video generation was interrupted by a server restart. Please retry.",
+            }
+        )
+        .eq("status", "processing")
+        .lt("updated_at", cutoff)
+        .execute()
+    )
+    return len(result.data)
 
 
 def _maybe_reset_usage(user_row: dict) -> dict:

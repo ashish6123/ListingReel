@@ -75,9 +75,14 @@ def _caption_chunks(script: str, total_duration: float) -> list[tuple[str, float
     return timed
 
 
+# 720x1280 instead of 1080x1920: cuts encode memory ~56% to fit Render's
+# free-tier 512MB instances. The zoompan+drawtext filter graph holds multiple
+# full-resolution frame buffers in memory simultaneously, and 1080p was
+# OOM-killing the whole container mid-encode (silently, with no error
+# written, leaving videos stuck in "processing" forever).
 FPS = 25
-WIDTH = 1080
-HEIGHT = 1920
+WIDTH = 720
+HEIGHT = 1280
 
 _FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux (Docker/Render)
@@ -165,6 +170,10 @@ def build_video(images: list[str], audio_path: str, output_path: str, script: st
         f"{audio_input_index}:a",
         "-c:v",
         "libx264",
+        "-preset",
+        "veryfast",
+        "-threads",
+        "1",
         "-pix_fmt",
         "yuv420p",
         "-c:a",

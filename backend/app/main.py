@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 import sentry_sdk
 from fastapi import FastAPI, Request, Response
@@ -9,8 +11,10 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.dependencies import get_db
 from app.limiter import limiter
 from app.routers import billing, listings, script, video, voiceover
+from app.routers.video import reap_stuck_videos
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +29,31 @@ if settings.SENTRY_DSN:
         traces_sample_rate=0.2,
     )
 
-app = FastAPI(title="ListingReel API")
+REAP_INTERVAL_SECONDS = 300
+
+
+async def _reap_loop() -> None:
+    db = get_db()
+    while True:
+        try:
+            reaped = reap_stuck_videos(db)
+            if reaped:
+                logger.warning("Reaped %d stuck 'processing' video(s)", reaped)
+        except Exception:
+            logger.exception("Stuck-video reaper iteration failed")
+        await asyncio.sleep(REAP_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(_reap_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title="ListingReel API", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

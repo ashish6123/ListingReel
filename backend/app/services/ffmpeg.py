@@ -8,6 +8,10 @@ class FFmpegError(Exception):
     pass
 
 
+PROBE_TIMEOUT_SECONDS = 30
+ENCODE_TIMEOUT_SECONDS = 180
+
+
 def get_audio_duration(path: str) -> float:
     """Runs ffprobe on the given audio file and returns its duration in seconds."""
     try:
@@ -24,7 +28,10 @@ def get_audio_duration(path: str) -> float:
             capture_output=True,
             check=True,
             text=True,
+            timeout=PROBE_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise FFmpegError(f"ffprobe timed out after {PROBE_TIMEOUT_SECONDS}s for {path}") from exc
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         raise FFmpegError(f"ffprobe failed for {path}: {exc}") from exc
 
@@ -169,7 +176,17 @@ def build_video(images: list[str], audio_path: str, output_path: str, script: st
     ]
 
     try:
-        subprocess.run(cmd, capture_output=True, check=True, text=True)
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=ENCODE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise FFmpegError(
+            f"ffmpeg encode timed out after {ENCODE_TIMEOUT_SECONDS}s"
+        ) from exc
     except subprocess.CalledProcessError as exc:
         raise FFmpegError(f"ffmpeg failed: {exc.stderr}") from exc
     except FileNotFoundError as exc:

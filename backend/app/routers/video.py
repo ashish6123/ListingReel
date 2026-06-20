@@ -230,7 +230,14 @@ async def video_status_route(
     )
 
 
-async def process_video(video_id: str, user_id: str) -> None:
+def process_video(video_id: str, user_id: str) -> None:
+    # NOTE: deliberately a sync `def`, not `async def`. Everything below is
+    # blocking (ffmpeg subprocess, file I/O, sync supabase calls). As an
+    # `async def` background task it ran *on the event loop* and froze the
+    # entire server for the whole ~minute-long encode - uvicorn couldn't
+    # answer Render's health checks, so Render restarted the container
+    # mid-encode every time. As a plain `def`, FastAPI/Starlette runs it in
+    # a worker thread and the event loop stays responsive.
     db = get_db()
     work_dir = tempfile.mkdtemp(prefix=f"listingreel_{video_id}_")
 

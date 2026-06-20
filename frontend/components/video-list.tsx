@@ -20,6 +20,28 @@ import type {
   VideoCardListResponse,
 } from "@/types";
 
+function errorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError) || typeof err.body !== "object" || !err.body) {
+    return fallback;
+  }
+  if (!("detail" in err.body)) {
+    return fallback;
+  }
+  const detail = (err.body as { detail: unknown }).detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (
+    typeof detail === "object" &&
+    detail &&
+    "code" in detail &&
+    (detail as { code: unknown }).code === "upgrade_required"
+  ) {
+    return "You've reached your free plan limit of 3 videos this month. Upgrade to Pro for unlimited videos.";
+  }
+  return fallback;
+}
+
 const ACTIVE_STATUSES = new Set(["pending", "processing"]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -133,14 +155,7 @@ export const VideoList = React.forwardRef<VideoListRef>(function VideoList(
       toast.success("Retrying video generation...");
       await refresh();
     } catch (err) {
-      const message =
-        err instanceof ApiError &&
-        typeof err.body === "object" &&
-        err.body &&
-        "detail" in err.body
-          ? String((err.body as { detail: unknown }).detail)
-          : "Failed to retry video generation.";
-      toast.error(message);
+      toast.error(errorMessage(err, "Failed to retry video generation."));
     } finally {
       setRetrying(null);
     }

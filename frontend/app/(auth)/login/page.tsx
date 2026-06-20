@@ -6,6 +6,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
+import { GoogleAuthButton, AuthDivider } from "@/components/google-auth-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -86,6 +87,8 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Logging in..." : "Log in"}
           </Button>
+          <AuthDivider />
+          <GoogleAuthButton label="Sign in with Google" />
           <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="underline underline-offset-4">
